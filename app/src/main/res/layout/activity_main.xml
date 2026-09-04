@@ -61,16 +61,6 @@
         android:enabled="false"
         android:text="Export / Share Report" />
 
-    <CheckBox
-        android:id="@+id/cbMockMode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:checked="true"
-        android:text="Mock Mode (Do NOT click final Cash Pay)"
-        android:textColor="#FF0000"
-        android:textStyle="bold" />
-
     <!-- M5: Automated Flow -->
     <LinearLayout
         android:layout_width="match_parent"

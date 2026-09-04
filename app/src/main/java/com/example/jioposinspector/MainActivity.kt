@@ -1,12 +1,16 @@
 package com.example.jioposinspector
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.example.jioposinspector.databinding.ActivityMainBinding
@@ -14,6 +18,11 @@ import com.example.jioposinspector.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var lastReport: DiagnosticReport? = null
+
+    private val notifPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* result ignored — permission is best-effort */ }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -26,9 +35,18 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         binding.btnEnableService.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        binding.btnCapture.setOnClickListener { doCapture() }
+        binding.btnShare.setOnClickListener { doShare() }
         binding.btnStartAutomation.setOnClickListener { doStartAutomation() }
     }
 
@@ -55,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         binding.tvServiceStatus.text = if (serviceEnabled)
             "Accessibility Service: ENABLED"
         else
-            "Accessibility Service: DISABLED � tap button below"
+            "Accessibility Service: DISABLED — tap button below"
 
         binding.tvJioPosStatus.text = when {
             !serviceEnabled -> "JioPOS: service not running"
@@ -64,8 +82,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.tvJioPosState.text = "State: ${state.label()}"
-        
+
+        binding.btnCapture.isEnabled = serviceEnabled && jioPosActive
+        binding.btnShare.isEnabled   = lastReport != null
         binding.btnStartAutomation.isEnabled = serviceEnabled
+    }
+
+    private fun doCapture() {
+        val service = JioPOSAccessibilityService.instance
+        if (service == null) {
+            toast("Service not running — enable it in Accessibility Settings")
+            return
+        }
+        val nodes = service.captureCurrentScreen()
+        val report = DiagnosticReport(
+            packageName   = JioPOSAccessibilityService.lastDetectedPackage ?: "unknown",
+            activityName  = JioPOSAccessibilityService.lastActivityClass,
+            captureTimeMs = System.currentTimeMillis(),
+            nodes         = nodes
+        )
+        lastReport = report
+        binding.tvLastCapture.text =
+            "Captured ${nodes.size} nodes  activity=${report.activityName?.substringAfterLast('.') ?: "?"}"
+        binding.tvLog.text =
+            ReportBuilder.buildText(report).take(4000) + "\n\n[Tap Export/Share for full report]"
+        binding.btnShare.isEnabled = true
+        toast("Captured ${nodes.size} nodes")
+    }
+
+    private fun doShare() {
+        val report = lastReport ?: run { toast("No report captured yet"); return }
+        startActivity(Intent.createChooser(ReportExporter.saveAndShare(this, report), "Share diagnostic report"))
     }
 
     private fun doStartAutomation() {
@@ -74,35 +121,22 @@ class MainActivity : AppCompatActivity() {
             toast("Accessibility service not running - Enable it first")
             return
         }
-        
+
         val phone = binding.etPhoneNumber.text?.toString()?.trim() ?: ""
         if (phone.length != 10 || !phone.all { it.isDigit() }) {
             toast("Enter a valid 10-digit mobile number")
             return
         }
-        
+
         val amount = binding.etPlanAmount.text?.toString()?.trim() ?: "19"
-        val isMock = binding.cbMockMode.isChecked
-        
-        // Hand off to service execution macro
-        service.armAutomatedRecharge(phone, amount, isMock)
-        
-        // Safely bring JioPOS to foreground without wiping its activity stack
+
+        service.armAutomatedRecharge(phone, amount)
+
         val launchIntent = packageManager.getLaunchIntentForPackage("com.jio.jpp1")
         if (launchIntent != null) {
-            // getLaunchIntentForPackage already includes FLAG_ACTIVITY_NEW_TASK
             startActivity(launchIntent)
         } else {
-            val fallbackIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                setPackage("com.jio.jpp1")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            try {
-                startActivity(fallbackIntent)
-            } catch (e: Exception) {
-                toast("JioPOS App not installed or detectable")
-            }
+            toast("Armed! Switch to JioPOS manually.")
         }
     }
 

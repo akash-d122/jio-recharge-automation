@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">JioPOS Inspector</string>
+    <string name="service_label">JioPOS Accessibility Inspector</string>
+    <string name="service_description">Diagnostic accessibility service for JioPOS Plus UI inspection. Never performs JioPOS actions and never reads or stores credentials.</string>
+</resources>

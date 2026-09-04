@@ -44,10 +44,8 @@ class HumanConfirmationActivity : AppCompatActivity() {
             gravity = android.view.Gravity.CENTER
         }
 
-        val isMock = intent.getBooleanExtra("EXTRA_IS_MOCK", true)
-        
         val btnConfirm = Button(this).apply {
-            text = if (isMock) "SIMULATE PAYMENT (MOCK)" else "CONFIRM & PAY CASH"
+            text = "CONFIRM & PAY CASH"
             textSize = 18f
             setPadding(32, 32, 32, 32)
                         setOnClickListener {
