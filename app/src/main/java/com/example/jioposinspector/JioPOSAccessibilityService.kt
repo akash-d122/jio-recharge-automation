@@ -533,32 +533,37 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // Poll for up to 5s for any Continue/Checkout button after Buy tap
-            // Coord fallback covers RN buttons with desc='button' and no text
+            // Poll for up to 5s for the Checkout Continue button.
+            // RN renders it as desc='button' with no text, so we fall back to
+            // the bottommost visible clickable node when text search fails.
             var postBuyTapped = false
             val postBuyDeadline = System.currentTimeMillis() + 5_000
             while (System.currentTimeMillis() < postBuyDeadline) {
                 val r = jiopOsRoot()
                 if (r != null) {
-                    val btn = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
-                    r.recycle()
-                    if (btn != null) {
-                        val clickable = JioPosStateDetector.nearestClickableAncestor(btn) ?: btn
+                    // Try text first
+                    val byText = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
+                    if (byText != null) {
+                        val clickable = JioPosStateDetector.nearestClickableAncestor(byText) ?: byText
+                        Log.i(TAG, "selectPlan: post-Buy Continue found by text, tapping")
                         tapNodeCenter(clickable)
-                        btn.recycle()
-                        if (clickable !== btn) clickable.recycle()
-                        postBuyTapped = true
-                        Log.i(TAG, "selectPlan: post-Buy button tapped via text")
-                        break
+                        byText.recycle(); if (clickable !== byText) clickable.recycle()
+                        r.recycle(); postBuyTapped = true; break
+                    }
+                    // Fall back: bottommost visible clickable (the lone button on Checkout screen)
+                    val bottom = bottomMostClickable(r)
+                    r.recycle()
+                    if (bottom != null) {
+                        val bnd = Rect(); bottom.getBoundsInScreen(bnd)
+                        Log.i(TAG, "selectPlan: post-Buy tapping bottommost clickable bounds=$bnd")
+                        tapNodeCenter(bottom)
+                        bottom.recycle(); postBuyTapped = true; break
                     }
                 }
                 Thread.sleep(200)
             }
             if (!postBuyTapped) {
-                // desc='button' with no text — coord fallback for Checkout Continue
-                // bounds: 64,1873-1014,2015 → center (539, 1944)
-                Log.i(TAG, "selectPlan: post-Buy text search timed out — coord tap (539,1944)")
-                tapCoord(539f, 1944f)
+                Log.w(TAG, "selectPlan: post-Buy — no clickable found in 5s, aborting")
             }
             safeSleep(800)
         } finally {
@@ -566,6 +571,24 @@ class JioPOSAccessibilityService : AccessibilityService() {
         }
 
         return M3PlanSelectionResult.PlanSelected
+    }
+
+    // Returns the visible clickable node with the greatest bottom-edge Y on screen.
+    // Used as a device-agnostic fallback for RN "Continue" buttons that have no text.
+    private fun bottomMostClickable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var best: AccessibilityNodeInfo? = null
+        var bestBottom = Int.MIN_VALUE
+        fun walk(n: AccessibilityNodeInfo) {
+            if (n.isClickable && n.isEnabled) {
+                val b = Rect(); n.getBoundsInScreen(b)
+                if (b.height() > 0 && b.bottom > bestBottom) {
+                    best?.recycle(); best = AccessibilityNodeInfo.obtain(n); bestBottom = b.bottom
+                }
+            }
+            for (i in 0 until n.childCount) { val c = n.getChild(i) ?: continue; walk(c); c.recycle() }
+        }
+        walk(root)
+        return best
     }
 
     // Returns the raw text node matching regex without walking up to a clickable ancestor.
@@ -787,89 +810,58 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 showToast("JioPOS detected — starting automation!")
                 Log.i(TAG, "Automation triggered. State=${lastDetectedState}")
 
-                // Phase 2: Dismiss any post-login overlays (survey, feedback dialog, etc.)
-                // Loop up to 3 times — multiple dialogs can appear sequentially.
-                safeSleep(2000) // let React settle after login
-                // Dismiss texts cover both the native survey and any RN feedback/rating dialogs.
+                // Phase 2: Wait for HOME, dismissing any post-login overlays along the way.
+                // Runs until state is HOME/RECHARGE or 60s elapses.
                 val dismissTexts = listOf(
                     "Maybe Later", "Maybe later", "Not Now", "Not now",
                     "Skip", "SKIP", "Later", "LATER", "No Thanks", "No thanks",
                     "Close", "CLOSE", "Dismiss", "DISMISS", "Cancel", "CANCEL"
                 )
-                repeat(3) { pass ->
+                val phase2Deadline = System.currentTimeMillis() + 60_000
+                while (System.currentTimeMillis() < phase2Deadline && isArmed) {
                     evaluateAndBroadcastState()
                     val curState = lastDetectedState
-                    if (curState == JioPosState.HOME || curState == JioPosState.RECHARGE) return@repeat
-                    val root = jiopOsRoot() ?: return@repeat
-                    var dismissed = false
-                    // Try known survey resource ID first
-                    val maybeLater = root.findAccessibilityNodeInfosByViewId("com.jio.jpp1:id/btn_may_be")
-                    if (maybeLater.isNotEmpty() && maybeLater[0].isClickable) {
-                        tapNodeCenter(maybeLater[0])
-                        dismissed = true
-                        Log.i(TAG, "Phase2 pass $pass: dismissed overlay via btn_may_be")
-                    }
-                    maybeLater.forEach { it.recycle() }
-                    // Generic text-based dismissal for feedback/rating dialogs
-                    if (!dismissed) {
-                        for (txt in dismissTexts) {
-                            val nodes = root.findAccessibilityNodeInfosByText(txt)
-                            val clickable = nodes.firstOrNull { it.isClickable && it.isEnabled }
-                                ?: nodes.firstOrNull()?.let { n ->
-                                    JioPosStateDetector.nearestClickableAncestor(n).also { n.recycle() }
+                    if (curState == JioPosState.HOME || curState == JioPosState.RECHARGE) break
+                    val root = jiopOsRoot()
+                    if (root != null) {
+                        var dismissed = false
+                        val maybeLater = root.findAccessibilityNodeInfosByViewId("com.jio.jpp1:id/btn_may_be")
+                        if (maybeLater.isNotEmpty() && maybeLater[0].isClickable) {
+                            tapNodeCenter(maybeLater[0]); dismissed = true
+                            Log.i(TAG, "Phase2: dismissed overlay via btn_may_be")
+                        }
+                        maybeLater.forEach { it.recycle() }
+                        if (!dismissed) {
+                            for (txt in dismissTexts) {
+                                val nodes = root.findAccessibilityNodeInfosByText(txt)
+                                val clickable = nodes.firstOrNull { it.isClickable && it.isEnabled }
+                                    ?: nodes.firstOrNull()?.let { n ->
+                                        JioPosStateDetector.nearestClickableAncestor(n).also { n.recycle() }
+                                    }
+                                nodes.filter { it !== clickable }.forEach { it.recycle() }
+                                if (clickable != null) {
+                                    tapNodeCenter(clickable); clickable.recycle(); dismissed = true
+                                    Log.i(TAG, "Phase2: dismissed overlay via text '$txt'")
+                                    break
                                 }
-                            nodes.filter { it !== clickable }.forEach { it.recycle() }
-                            if (clickable != null) {
-                                tapNodeCenter(clickable)
-                                clickable.recycle()
-                                dismissed = true
-                                Log.i(TAG, "Phase2 pass $pass: dismissed overlay via text '$txt'")
-                                break
                             }
                         }
+                        root.recycle()
+                        if (dismissed) safeSleep(1500) else Thread.sleep(400)
+                    } else {
+                        Thread.sleep(400)
                     }
-                    root.recycle()
-                    if (dismissed) safeSleep(1500) // wait for overlay to clear
+                }
+                if (!isArmed) return@Thread
+                evaluateAndBroadcastState()
+                if (lastDetectedState != JioPosState.HOME && lastDetectedState != JioPosState.RECHARGE) {
+                    showToast("Not on Home screen after 60s. Aborting.")
+                    isArmed = false; return@Thread
                 }
 
                 // Phase 3: Navigate to Recharge from Home (if not already there)
                 evaluateAndBroadcastState()
                 if (lastDetectedState != JioPosState.RECHARGE) {
-                    if (!waitForState(JioPosState.HOME, 15_000)) {
-                        showToast("Not on Home screen. Aborting.")
-                        isArmed = false; return@Thread
-                    }
-                    safeSleep(1000)
-                    // Dismiss any feedback/rating popup that appears on the Home screen
-                    run {
-                        val root = jiopOsRoot()
-                        if (root != null) {
-                            var dismissed = false
-                            val maybeLater = root.findAccessibilityNodeInfosByViewId("com.jio.jpp1:id/btn_may_be")
-                            if (maybeLater.isNotEmpty() && maybeLater[0].isClickable) {
-                                tapNodeCenter(maybeLater[0]); dismissed = true
-                                Log.i(TAG, "Phase3 pre-nav: dismissed Home overlay via btn_may_be")
-                            }
-                            maybeLater.forEach { it.recycle() }
-                            if (!dismissed) {
-                                for (txt in dismissTexts) {
-                                    val nodes = root.findAccessibilityNodeInfosByText(txt)
-                                    val clickable = nodes.firstOrNull { it.isClickable && it.isEnabled }
-                                        ?: nodes.firstOrNull()?.let { n ->
-                                            JioPosStateDetector.nearestClickableAncestor(n).also { n.recycle() }
-                                        }
-                                    nodes.filter { it !== clickable }.forEach { it.recycle() }
-                                    if (clickable != null) {
-                                        tapNodeCenter(clickable); clickable.recycle(); dismissed = true
-                                        Log.i(TAG, "Phase3 pre-nav: dismissed Home overlay via text '$txt'")
-                                        break
-                                    }
-                                }
-                            }
-                            root.recycle()
-                            if (dismissed) safeSleep(1000)
-                        }
-                    }
                     val navResult = navigateToRecharge()
                     if (navResult !is NavigateResult.Clicked) {
                         showToast("Failed to click Recharge tile. Aborting.")
