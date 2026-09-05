@@ -349,17 +349,17 @@ class JioPOSAccessibilityService : AccessibilityService() {
         // Step 2: paste amount into filter field then dismiss keyboard via accessibility actions only
         try {
             setClipboard(amount)
-            safeSleep(300)
+            safeSleep(150)
             if (planEditText != null) {
                 val b = Rect(); planEditText.getBoundsInScreen(b)
                 Log.i(TAG, "selectPlan: native EditText bounds=\$b, tapping + pasting")
                 tapNodeCenter(planEditText) // coordinate tap — confirmed to open keyboard
-                safeSleep(350)
+                safeSleep(250)
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                safeSleep(450)
+                safeSleep(250)
                 // Try ACTION_CLEAR_FOCUS first; if RN ignores it the fallback tapCoord covers it
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
-                safeSleep(300)
+                safeSleep(150)
                 // Tap app toolbar area (y=80) — above WebView (starts at y≈106)
                 // Cannot trigger WebView touch events; reliably removes keyboard focus
                 tapCoord(540f, 80f)
@@ -367,15 +367,15 @@ class JioPOSAccessibilityService : AccessibilityService() {
             } else {
                 Log.i(TAG, "selectPlan: no native EditText, tapping plan filter at (540,921)")
                 tapCoord(540f, 921f) // center of EditText: bounds 108,872,970,970
-                safeSleep(600)
+                safeSleep(350)
                 performGlobalAction(7) // GLOBAL_ACTION_PASTE
-                safeSleep(500)
+                safeSleep(300)
                 tapCoord(540f, 80f) // toolbar area above WebView
                 Log.i(TAG, "selectPlan: global paste sent")
             }
-            safeSleep(700) // wait for keyboard animation to complete
+            safeSleep(500) // wait for keyboard animation to complete
             Log.i(TAG, "selectPlan: keyboard dismissed, waiting for plan list to load")
-            safeSleep(800)
+            safeSleep(500)
         } finally {
             planEditText?.recycle()
         }
@@ -533,47 +533,34 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            safeSleep(1000)
-            val rootAfter = jiopOsRoot()
-            if (rootAfter != null) {
-                val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
-                if (secContinue != null) {
-                    Log.i(TAG, "selectPlan: secondary button found, tapping")
-                    val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
-                    tapNodeCenter(secClickable)
-                    secContinue.recycle()
-                    if (secClickable !== secContinue) secClickable.recycle()
-                    // Poll for a tertiary Continue on the next screen (e.g. after Checkout -> Continue)
-                    safeSleep(1200)
-                    var tertTapped = false
-                    for (tertPass in 0 until 3) {
-                        val rootTert = jiopOsRoot()
-                        if (rootTert != null) {
-                            val tertContinue = findRawTextNode(rootTert, Regex("""(?i)\bcontinue\b"""))
-                            rootTert.recycle()
-                            if (tertContinue != null) {
-                                Log.i(TAG, "selectPlan: tertiary Continue found at pass $tertPass, tapping")
-                                val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
-                                tapNodeCenter(tertClickable)
-                                tertContinue.recycle()
-                                if (tertClickable !== tertContinue) tertClickable.recycle()
-                                safeSleep(1500)
-                                tertTapped = true
-                                break
-                            }
-                        }
-                        safeSleep(800)
-                    }
-                    if (!tertTapped) {
-                        // Checkout "Continue" button has desc='button' with no text — coord fallback
-                        // bounds: 64,1873-1014,2015 → center (539, 1944)
-                        Log.i(TAG, "selectPlan: tertiary text search failed — coord tap for Checkout Continue")
-                        tapCoord(539f, 1944f)
-                        safeSleep(1500)
+            // Poll for up to 5s for any Continue/Checkout button after Buy tap
+            // Coord fallback covers RN buttons with desc='button' and no text
+            var postBuyTapped = false
+            val postBuyDeadline = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < postBuyDeadline) {
+                val r = jiopOsRoot()
+                if (r != null) {
+                    val btn = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
+                    r.recycle()
+                    if (btn != null) {
+                        val clickable = JioPosStateDetector.nearestClickableAncestor(btn) ?: btn
+                        tapNodeCenter(clickable)
+                        btn.recycle()
+                        if (clickable !== btn) clickable.recycle()
+                        postBuyTapped = true
+                        Log.i(TAG, "selectPlan: post-Buy button tapped via text")
+                        break
                     }
                 }
-                rootAfter.recycle()
+                Thread.sleep(200)
             }
+            if (!postBuyTapped) {
+                // desc='button' with no text — coord fallback for Checkout Continue
+                // bounds: 64,1873-1014,2015 → center (539, 1944)
+                Log.i(TAG, "selectPlan: post-Buy text search timed out — coord tap (539,1944)")
+                tapCoord(539f, 1944f)
+            }
+            safeSleep(800)
         } finally {
             amountNode.recycle()
         }
@@ -658,7 +645,6 @@ class JioPOSAccessibilityService : AccessibilityService() {
         }
 
         // Step 2: Wait for the Cash Details modal, then find submit button
-        // Poll at 150ms so we react within one tick of the panel becoming visible
         var finalSubmitNode: AccessibilityNodeInfo? = null
         val step2Deadline = System.currentTimeMillis() + 12_000
         while (System.currentTimeMillis() < step2Deadline) {
@@ -676,7 +662,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 root.recycle()
             }
-            Thread.sleep(500)
+            Thread.sleep(200)
         }
         if (finalSubmitNode == null) return M4CashResult.SubmitButtonNotFound
 
