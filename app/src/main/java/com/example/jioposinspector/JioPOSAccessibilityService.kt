@@ -533,29 +533,40 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // Poll for up to 5s for the Checkout Continue button.
-            // RN renders it as desc='button' with no text, so we fall back to
-            // the bottommost visible clickable node when text search fails.
+            // Step 1: Wait for the plan-list screen to leave (Buy buttons disappear).
+            // This confirms the Checkout screen has opened before we look for Continue.
+            val screenChangedDeadline = System.currentTimeMillis() + 6_000
+            while (System.currentTimeMillis() < screenChangedDeadline) {
+                val r = jiopOsRoot()
+                val buyGone = if (r != null) {
+                    val hasBuy = findRawTextNode(r, Regex("""(?i)^button Buy$""")) != null
+                    r.recycle(); !hasBuy
+                } else false
+                if (buyGone) break
+                Thread.sleep(150)
+            }
+
+            // Step 2: Poll up to 6s for the Checkout Continue button.
+            // Text match covers native labels; bottommost-clickable covers RN desc='button'.
             var postBuyTapped = false
-            val postBuyDeadline = System.currentTimeMillis() + 5_000
+            val postBuyDeadline = System.currentTimeMillis() + 6_000
             while (System.currentTimeMillis() < postBuyDeadline) {
                 val r = jiopOsRoot()
                 if (r != null) {
-                    // Try text first
                     val byText = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
                     if (byText != null) {
                         val clickable = JioPosStateDetector.nearestClickableAncestor(byText) ?: byText
-                        Log.i(TAG, "selectPlan: post-Buy Continue found by text, tapping")
+                        Log.i(TAG, "selectPlan: Checkout Continue found by text, tapping")
                         tapNodeCenter(clickable)
                         byText.recycle(); if (clickable !== byText) clickable.recycle()
                         r.recycle(); postBuyTapped = true; break
                     }
-                    // Fall back: bottommost visible clickable (the lone button on Checkout screen)
+                    // No text — use bottommost visible clickable (Checkout has only one button)
                     val bottom = bottomMostClickable(r)
                     r.recycle()
                     if (bottom != null) {
                         val bnd = Rect(); bottom.getBoundsInScreen(bnd)
-                        Log.i(TAG, "selectPlan: post-Buy tapping bottommost clickable bounds=$bnd")
+                        Log.i(TAG, "selectPlan: Checkout Continue via bottommost clickable bounds=$bnd")
                         tapNodeCenter(bottom)
                         bottom.recycle(); postBuyTapped = true; break
                     }
@@ -563,7 +574,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 Thread.sleep(200)
             }
             if (!postBuyTapped) {
-                Log.w(TAG, "selectPlan: post-Buy — no clickable found in 5s, aborting")
+                Log.w(TAG, "selectPlan: Checkout Continue not found in 6s — aborting")
             }
             safeSleep(800)
         } finally {
