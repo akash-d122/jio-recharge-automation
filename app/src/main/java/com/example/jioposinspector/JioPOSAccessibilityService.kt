@@ -354,9 +354,9 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 val b = Rect(); planEditText.getBoundsInScreen(b)
                 Log.i(TAG, "selectPlan: native EditText bounds=\$b, tapping + pasting")
                 tapNodeCenter(planEditText) // coordinate tap — confirmed to open keyboard
-                safeSleep(500)
+                safeSleep(350)
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                safeSleep(600)
+                safeSleep(450)
                 // Try ACTION_CLEAR_FOCUS first; if RN ignores it the fallback tapCoord covers it
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
                 safeSleep(300)
@@ -373,9 +373,9 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 tapCoord(540f, 80f) // toolbar area above WebView
                 Log.i(TAG, "selectPlan: global paste sent")
             }
-            safeSleep(1200) // wait for keyboard animation to complete
+            safeSleep(700) // wait for keyboard animation to complete
             Log.i(TAG, "selectPlan: keyboard dismissed, waiting for plan list to load")
-            safeSleep(2000)
+            safeSleep(800)
         } finally {
             planEditText?.recycle()
         }
@@ -533,7 +533,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            safeSleep(1500)
+            safeSleep(1000)
             val rootAfter = jiopOsRoot()
             if (rootAfter != null) {
                 val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
@@ -544,7 +544,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     secContinue.recycle()
                     if (secClickable !== secContinue) secClickable.recycle()
                     // Poll for a tertiary Continue on the next screen (e.g. after Checkout -> Continue)
-                    safeSleep(2000)
+                    safeSleep(1200)
                     var tertTapped = false
                     for (tertPass in 0 until 3) {
                         val rootTert = jiopOsRoot()
@@ -640,11 +640,11 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     break
                 }
             }
-            Thread.sleep(500)
+            Thread.sleep(150)
         }
         if (cashOptionNode != null) {
             try {
-                safeSleep(400)
+                safeSleep(150)
                 tapNodeCenter(cashOptionNode)
             } finally {
                 cashOptionNode.recycle()
@@ -653,12 +653,12 @@ class JioPOSAccessibilityService : AccessibilityService() {
             // Cash tile has clickable=false with no clickable parent in RN tree — coord fallback
             // Cash row bounds: 64,660-1014,844 → center (539, 752)
             Log.i(TAG, "M4: Cash node not found via tree — coord tap fallback")
-            safeSleep(400)
+            safeSleep(150)
             tapCoord(539f, 752f)
         }
 
         // Step 2: Wait for the Cash Details modal, then find submit button
-        safeSleep(1500) // allow Cash panel to animate open
+        // Poll at 150ms so we react within one tick of the panel becoming visible
         var finalSubmitNode: AccessibilityNodeInfo? = null
         val step2Deadline = System.currentTimeMillis() + 12_000
         while (System.currentTimeMillis() < step2Deadline) {
