@@ -4,9 +4,42 @@
 /.idea
 .DS_Store
 /build
+app/build/
 /captures
 .externalNativeBuild
 .cxx
 *.jks
 *.keystore
 !debug.keystore
+
+# scratch/patch/fix scripts generated during development
+fix_*.py
+m4_*.py
+m5_*.py
+main_*.py
+update_*.py
+plan_*.py
+plan_*.kt
+plan_*.patch
+toggle_*.patch
+click_*.patch
+update_*.patch
+m4_*.patch
+m4_*.kt
+*.patch
+*.orig
+build_out.txt
+recharge_*.xml
+replacement.kt
+
+# decompiled APK reference (large, not source)
+decompiled-jio-pos-plus-apk-files/
+
+# Claude memory/session files
+.claude/
+
+# status/planning docs (not source)
+M3_STATUS.md
+M4_STATUS.md
+PRD.md
+plan_search_thoughts.md

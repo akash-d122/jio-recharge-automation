@@ -1,4 +1,4 @@
-package com.example.jioposinspector
+﻿package com.example.jioposinspector
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -267,7 +267,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
             safeSleep(500)
 
             tapCoord(540f, 300f) // blur to dismiss keyboard and trigger React validation
-            safeSleep(1000) // wait for keyboard to fully animate away and Continue to become visible
+            // Poll until Continue button appears — no fixed sleep needed before this loop
 
             // Dynamic: wait until Continue button appears and is enabled
             var continueNode: AccessibilityNodeInfo? = null
@@ -316,7 +316,11 @@ class JioPOSAccessibilityService : AccessibilityService() {
     fun selectPlan(amount: String = "19"): M3PlanSelectionResult {
         if (lastDetectedState != JioPosState.RECHARGE) return M3PlanSelectionResult.NotOnRecharge
 
-        safeSleep(2000) // let phone-entry screen animate away
+        val tSel = System.currentTimeMillis()
+        fun selMs() = System.currentTimeMillis() - tSel
+        Log.i(TAG, "TIMING selectPlan +0ms: entered")
+
+        // let phone-entry screen animate away — plan screen polls for its EditText below
 
         val amtInt = amount.trim()
         val planRegex = Regex(
@@ -344,7 +348,87 @@ class JioPOSAccessibilityService : AccessibilityService() {
             }
             Thread.sleep(500)
         }
-        Log.i(TAG, "selectPlan: plan screen detected, planEditText=${planEditText != null}")
+        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: plan screen detected, planEditText=${planEditText != null}")
+
+        // Fast path: JioPOS pre-selects the last-used plan as a clickable card showing the
+        // bare numeric amount (no prefix). The card appears slightly after the EditText (React
+        // renders asynchronously), so poll up to 2s before falling back to filter+scroll.
+        val bareAmtRegex = Regex("^" + Regex.escape(amtInt) + "(\\.0{1,2})?$")
+        fun findFastPathCard(): AccessibilityNodeInfo? {
+            val root = jiopOsRoot() ?: return null
+            var found: AccessibilityNodeInfo? = null
+            fun walk(n: AccessibilityNodeInfo) {
+                if (found != null) return
+                val t = n.text?.toString() ?: ""
+                if (bareAmtRegex.matches(t) && n.isClickable) {
+                    val b = Rect(); n.getBoundsInScreen(b)
+                    if (b.height() > 0) { found = AccessibilityNodeInfo.obtain(n); return }
+                }
+                for (i in 0 until n.childCount) { val c = n.getChild(i) ?: continue; walk(c); c.recycle() }
+            }
+            walk(root); root.recycle(); return found
+        }
+        val fastPathDeadline = System.currentTimeMillis() + 8000L
+        var fastPathCardNode: AccessibilityNodeInfo? = null
+        while (System.currentTimeMillis() < fastPathDeadline && isArmed) {
+            fastPathCardNode = findFastPathCard()
+            if (fastPathCardNode != null) break
+            Thread.sleep(200)
+        }
+        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path poll done, card=${fastPathCardNode != null}")
+
+        if (fastPathCardNode != null) {
+            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: FAST PATH -- pre-selected card found, tapping card")
+            try {
+                tapNodeCenter(fastPathCardNode, durationMs = 100)
+            } finally {
+                fastPathCardNode.recycle()
+            }
+            planEditText?.recycle()
+            // Continue to the Checkout/Continue sequence below
+
+            safeSleep(1500)
+            val rootAfter = jiopOsRoot()
+            if (rootAfter != null) {
+                val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
+                if (secContinue != null) {
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path secondary Checkout/Continue found, tapping")
+                    val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
+                    tapNodeCenter(secClickable)
+                    secContinue.recycle()
+                    if (secClickable !== secContinue) secClickable.recycle()
+                    safeSleep(2000)
+                    var tertTapped = false
+                    for (tertPass in 0 until 3) {
+                        val rootTert = jiopOsRoot()
+                        if (rootTert != null) {
+                            val tertContinue = findRawTextNode(rootTert, Regex("""(?i)\bcontinue\b"""))
+                            rootTert.recycle()
+                            if (tertContinue != null) {
+                                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary Continue at pass $tertPass")
+                                val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
+                                tapNodeCenter(tertClickable)
+                                tertContinue.recycle()
+                                if (tertClickable !== tertContinue) tertClickable.recycle()
+                                safeSleep(1500)
+                                tertTapped = true
+                                break
+                            }
+                        }
+                        safeSleep(800)
+                    }
+                    if (!tertTapped) {
+                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — coord tap Checkout Continue")
+                        tapCoord(540f, 2078f)
+                        safeSleep(1500)
+                    }
+                }
+                rootAfter.recycle()
+            }
+            return M3PlanSelectionResult.PlanSelected
+        }
+
+        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: no fast-path card — falling back to filter+scroll")
 
         // Step 2: paste amount into filter field then dismiss keyboard via accessibility actions only
         try {
@@ -352,7 +436,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
             safeSleep(300)
             if (planEditText != null) {
                 val b = Rect(); planEditText.getBoundsInScreen(b)
-                Log.i(TAG, "selectPlan: native EditText bounds=\$b, tapping + pasting")
+                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: native EditText bounds=\$b, tapping + pasting")
                 tapNodeCenter(planEditText) // coordinate tap — confirmed to open keyboard
                 safeSleep(500)
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_PASTE)
@@ -363,7 +447,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 // Tap app toolbar area (y=80) — above WebView (starts at y≈106)
                 // Cannot trigger WebView touch events; reliably removes keyboard focus
                 tapCoord(540f, 80f)
-                Log.i(TAG, "selectPlan: blur via toolbar tap, waiting for keyboard dismiss")
+                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: blur via toolbar tap, waiting for keyboard dismiss")
             } else {
                 Log.i(TAG, "selectPlan: no native EditText, tapping plan filter at (540,921)")
                 tapCoord(540f, 921f) // center of EditText: bounds 108,872,970,970
@@ -373,9 +457,29 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 tapCoord(540f, 80f) // toolbar area above WebView
                 Log.i(TAG, "selectPlan: global paste sent")
             }
-            safeSleep(1200) // wait for keyboard animation to complete
-            Log.i(TAG, "selectPlan: keyboard dismissed, waiting for plan list to load")
-            safeSleep(2000)
+            // Poll until the React Native filter narrows the plan list to only the target amount.
+            // Cannot use findFocus(FOCUS_INPUT) — RN WebView EditText doesn't report accessibility
+            // input focus, so that check exits immediately. Cannot check for ₹ presence — the
+            // unfiltered list already has ₹ nodes. Instead, wait until NO other ₹ amount is visible.
+            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: keyboard dismissed, waiting for filter to apply")
+            val filterDeadline = System.currentTimeMillis() + 4000
+            var filterApplied = false
+            while (System.currentTimeMillis() < filterDeadline) {
+                Thread.sleep(200)
+                val r = jiopOsRoot() ?: continue
+                var hasOtherAmount = false
+                fun checkFiltered(n: AccessibilityNodeInfo) {
+                    val t = n.text?.toString() ?: ""
+                    if (t.startsWith("₹") && t.trim() != "₹$amtInt" && t.trim() != "₹${amtInt}.00") {
+                        hasOtherAmount = true
+                    }
+                    for (i in 0 until n.childCount) { val c = n.getChild(i) ?: continue; checkFiltered(c); c.recycle() }
+                }
+                checkFiltered(r)
+                r.recycle()
+                if (!hasOtherAmount) { filterApplied = true; break }
+            }
+            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: filter applied=$filterApplied, proceeding to scroll+poll")
         } finally {
             planEditText?.recycle()
         }
@@ -400,7 +504,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
         // Step 3: scroll + poll for the exact plan amount node
         // Use ACTION_SCROLL_FORWARD on the scrollable container \u2014 avoids touch gestures
         // that React Native intercepts as taps (which re-focus the search input).
-        Log.i(TAG, "selectPlan: starting scroll+poll for \u20B9$amtInt")
+        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: starting scroll+poll for \u20B9$amtInt")
         var amountNode: AccessibilityNodeInfo? = null
 
         fun findScrollable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -438,14 +542,14 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     amountNode = findRawTextNode(root, planRegex)
                     root.recycle()
                     if (amountNode != null) {
-                        Log.i(TAG, "selectPlan: found \u20B9$amtInt node at scroll pass $scrollPass")
+                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: found \u20B9$amtInt node at scroll pass $scrollPass")
                         break
                     }
                 }
                 Thread.sleep(200)
             }
             if (amountNode != null) break
-            Log.i(TAG, "selectPlan: not found at pass $scrollPass, scrolling")
+            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: not found at pass $scrollPass, scrolling")
             doScroll()
         }
 
@@ -454,7 +558,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
         // Buy is still clipped at the screen edge (height=0).
         if (amountNode != null) {
             val b = Rect(); amountNode!!.getBoundsInScreen(b)
-            Log.i(TAG, "selectPlan: plan found at $b, scrolling once more to ensure Buy is visible")
+            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: plan found at $b, scrolling once more to ensure Buy is visible")
             doScroll()
             amountNode!!.recycle()
             amountNode = null
@@ -514,7 +618,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 collectBuy(root)
                 root.recycle()
-                Log.i(TAG, "selectPlan: spatial Buy search done, bestDelta=$bestDelta target=${clickTarget != null}")
+                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: spatial Buy search done, bestDelta=$bestDelta target=${clickTarget != null}")
             }
             if (clickTarget == null) {
                 // ponytail: coordinate fallback \u2014 Buy is ~560px below \u20b919 text bottom (from tree dump: price@1541, buy@2100)
@@ -527,7 +631,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 val ct = clickTarget!!
                 try {
                     tapNodeCenter(ct, durationMs = 100)
-                    Log.i(TAG, "selectPlan: tapped buy button")
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tapped buy button")
                 } finally {
                     ct.recycle()
                 }
@@ -538,7 +642,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
             if (rootAfter != null) {
                 val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
                 if (secContinue != null) {
-                    Log.i(TAG, "selectPlan: secondary button found, tapping")
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: secondary Checkout/Continue button found, tapping")
                     val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
                     tapNodeCenter(secClickable)
                     secContinue.recycle()
@@ -552,7 +656,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                             val tertContinue = findRawTextNode(rootTert, Regex("""(?i)\bcontinue\b"""))
                             rootTert.recycle()
                             if (tertContinue != null) {
-                                Log.i(TAG, "selectPlan: tertiary Continue found at pass $tertPass, tapping")
+                                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary Continue found at pass $tertPass, tapping")
                                 val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
                                 tapNodeCenter(tertClickable)
                                 tertContinue.recycle()
@@ -567,7 +671,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     if (!tertTapped) {
                         // Checkout "Continue" button has desc='button' with no text — coord fallback
                         // bounds: 72,1997-1008,2159 → center (540, 2078)
-                        Log.i(TAG, "selectPlan: tertiary text search failed — coord tap for Checkout Continue")
+                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text search failed — coord tap for Checkout Continue")
                         tapCoord(540f, 2078f)
                         safeSleep(1500)
                     }
@@ -679,7 +783,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
     fun payCashAndConfirm(): M4CashResult {
         // Step 1: Find and click the "Cash" tile
         var cashOptionNode: AccessibilityNodeInfo? = null
-        val step1Deadline = System.currentTimeMillis() + 15_000
+        val step1Deadline = System.currentTimeMillis() + 2_000
         while (System.currentTimeMillis() < step1Deadline) {
             val root = jiopOsRoot()
             if (root != null) {
@@ -817,7 +921,9 @@ class JioPOSAccessibilityService : AccessibilityService() {
 
         automationThread = Thread {
             try {
-                Log.i(TAG, "Arm Mode: waiting for JioPOS to come to foreground")
+                val t0 = System.currentTimeMillis()
+                fun ms() = System.currentTimeMillis() - t0
+                Log.i(TAG, "TIMING t0=0ms: Arm Mode: waiting for JioPOS to come to foreground")
                 showToast("Armed. Switch to JioPOS.")
 
                 // Phase 1: Wait for JioPOS to be in foreground, past login
@@ -849,9 +955,10 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 if (!isArmed) return@Thread
 
                 showToast("JioPOS detected — starting automation!")
-                Log.i(TAG, "Automation triggered. State=${lastDetectedState}")
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase1 done — JioPOS foreground, state=${lastDetectedState}")
 
                 // Phase 2: Dismiss any post-login overlays (survey, feedback dialog, etc.)
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase2 start — dismissing overlays")
                 // Loop up to 3 times — multiple dialogs can appear sequentially.
                 safeSleep(2000) // let React settle after login
                 // Dismiss texts cover both the native survey and any RN feedback/rating dialogs.
@@ -897,9 +1004,29 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
 
                 // Phase 3: Navigate to Recharge from Home (if not already there)
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase3 start — nav to Recharge, state=${lastDetectedState}")
                 evaluateAndBroadcastState()
                 if (lastDetectedState != JioPosState.RECHARGE) {
-                    if (!waitForState(JioPosState.HOME, 15_000)) {
+                    // Wait for HOME, also accepting POST_LOGIN_SURVEY (dismiss it en-route).
+                    val homeDeadline = System.currentTimeMillis() + 30_000
+                    var reachedHome = false
+                    while (System.currentTimeMillis() < homeDeadline && isArmed) {
+                        evaluateAndBroadcastState()
+                        val s = lastDetectedState
+                        if (s == JioPosState.HOME || s == JioPosState.RECHARGE) { reachedHome = true; break }
+                        if (s == JioPosState.POST_LOGIN_SURVEY) {
+                            // attempt dismissal then re-check
+                            val r = jiopOsRoot()
+                            if (r != null) {
+                                val ml = r.findAccessibilityNodeInfosByViewId("com.jio.jpp1:id/btn_may_be")
+                                if (ml.isNotEmpty() && ml[0].isClickable) { tapNodeCenter(ml[0]); Log.i(TAG, "Phase3 wait: dismissed survey overlay") }
+                                ml.forEach { it.recycle() }
+                                r.recycle()
+                            }
+                        }
+                        Thread.sleep(500)
+                    }
+                    if (!reachedHome) {
                         showToast("Not on Home screen. Aborting.")
                         isArmed = false; return@Thread
                     }
@@ -943,6 +1070,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
 
                 // Phase 4: Wait for Recharge screen to load
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase4 start — waitForState RECHARGE")
                 if (!waitForState(JioPosState.RECHARGE, 12_000)) {
                     showToast("Recharge screen didn't load. Aborting.")
                     isArmed = false; return@Thread
@@ -950,6 +1078,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 safeSleep(1500)
 
                 // Phase 5: Enter mobile number
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase5 start — enterMobileNumber")
                 val entryResult = enterMobileNumber(phone)
                 if (entryResult !is M3EntryResult.Entered) {
                     showToast("Failed to enter number: $entryResult. Aborting.")
@@ -957,17 +1086,19 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 safeSleep(1500)
 
-                // Phase 6: Select plan
-                safeSleep(3000) // give plan-search screen time to load after Continue tap
+                // Phase 6: Select plan — selectPlan() polls internally for the plan screen
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase6 start — selectPlan")
                 val planResult = selectPlan(amount)
                 if (planResult !is M3PlanSelectionResult.PlanSelected) {
                     showToast("Failed to select plan: $planResult. Aborting.")
                     isArmed = false; return@Thread
                 }
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase6 done — selectPlan=$planResult")
                 safeSleep(1000)
 
                 // Phase 7: Navigate Buy → Continue → Cash → human confirmation → submit
                 // payCashAndConfirm contains the latch-based notification confirmation
+                Log.i(TAG, "TIMING t+${ms()}ms: Phase7 start — payCashAndConfirm")
                 val cashResult = payCashAndConfirm()
                 when (cashResult) {
                     is M4CashResult.CashPaid -> showToast("Recharge completed!")

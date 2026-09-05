@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -65,8 +66,21 @@ class MainActivity : AppCompatActivity() {
         unregisterReceiver(statusReceiver)
     }
 
+    // ponytail: Settings.Secure check survives process death; instance==null only until onServiceConnected fires
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?: return false
+        val target = "${packageName}/${JioPOSAccessibilityService::class.java.name}"
+        val splitter = TextUtils.SimpleStringSplitter(':')
+        splitter.setString(enabled)
+        while (splitter.hasNext()) {
+            if (splitter.next().equals(target, ignoreCase = true)) return true
+        }
+        return false
+    }
+
     private fun updateStatusUi() {
-        val serviceEnabled = JioPOSAccessibilityService.instance != null
+        val serviceEnabled = isAccessibilityServiceEnabled()
         val jioPosActive   = JioPOSAccessibilityService.isJioPosInForeground
         val state          = JioPOSAccessibilityService.lastDetectedState
 
@@ -116,8 +130,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doStartAutomation() {
-        val service = JioPOSAccessibilityService.instance
-        if (service == null) {
+        if (!isAccessibilityServiceEnabled()) {
             toast("Accessibility service not running - Enable it first")
             return
         }
@@ -129,6 +142,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         val amount = binding.etPlanAmount.text?.toString()?.trim() ?: "19"
+
+        val service = JioPOSAccessibilityService.instance
+        if (service == null) {
+            // Service is enabled in settings but onServiceConnected hasn't fired yet (process just relaunched).
+            // Launch JioPOS first — the system will bind the service, then the automation will proceed.
+            toast("Service reconnecting — switching to JioPOS now, tap Start again if needed")
+            val launchIntent = packageManager.getLaunchIntentForPackage("com.jio.jpp1")
+            if (launchIntent != null) startActivity(launchIntent)
+            return
+        }
 
         service.armAutomatedRecharge(phone, amount)
 
