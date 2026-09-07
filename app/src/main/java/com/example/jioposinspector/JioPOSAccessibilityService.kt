@@ -42,6 +42,9 @@ class JioPOSAccessibilityService : AccessibilityService() {
         @Volatile var lastDetectedPackage: String? = null
         @Volatile var lastDetectedState: JioPosState = JioPosState.JIOPOS_NOT_FOREGROUND
         @Volatile var lastActivityClass: String? = null
+        // Updated on every TYPE_WINDOW_STATE_CHANGED from JioPOS — used to detect
+        // a fresh JioPOS foreground transition after the automation was armed.
+        @Volatile var lastJioPosEventTimeMs: Long = 0L
     }
 
     // ── instance state ──────────────────────────────────────────────────────
@@ -108,6 +111,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
             isJioPosInForeground = (pkg == "com.jio.jpp1")
             if (isJioPosInForeground) {
                 lastActivityClass = event.className?.toString()
+                lastJioPosEventTimeMs = System.currentTimeMillis()
             }
         }
 
@@ -922,17 +926,21 @@ class JioPOSAccessibilityService : AccessibilityService() {
         automationThread = Thread {
             try {
                 val t0 = System.currentTimeMillis()
+                val armTimeMs = t0
                 fun ms() = System.currentTimeMillis() - t0
                 Log.i(TAG, "TIMING t0=0ms: Arm Mode: waiting for JioPOS to come to foreground")
                 showToast("Armed. Switch to JioPOS.")
 
-                // Phase 1: Wait for JioPOS to be in foreground, past login
+                // Phase 1: Wait for JioPOS to be in foreground, past login.
+                // We require a fresh JioPOS window event AFTER arm time so that a pre-existing
+                // HOME/RECHARGE screen from a previous session doesn't cause an immediate (wrong) break.
                 var hasNotifiedLogin = false
                 val armDeadline = System.currentTimeMillis() + 30 * 60_000 // 30 min max wait
 
                 while (System.currentTimeMillis() < armDeadline) {
                     if (!isArmed) return@Thread
-                    if (isJioPosInForeground) {
+                    // Only act on events that arrived after we armed — ignore stale foreground state.
+                    if (isJioPosInForeground && lastJioPosEventTimeMs >= armTimeMs) {
                         evaluateAndBroadcastState()
                         val state = lastDetectedState
                         when (state) {
@@ -946,7 +954,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                                     hasNotifiedLogin = true
                                 }
                             }
-                            else -> { /* UNKNOWN or not foreground — keep waiting */ }
+                            else -> { /* UNKNOWN or transitioning — keep waiting */ }
                         }
                     }
                     Thread.sleep(500)
