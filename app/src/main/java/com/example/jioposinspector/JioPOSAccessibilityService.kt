@@ -36,6 +36,8 @@ class JioPOSAccessibilityService : AccessibilityService() {
         const val ACTION_NOTIF_CANCEL  = "com.example.jioposinspector.NOTIF_CANCEL"
         private const val NOTIF_CHANNEL = "recharge_confirm"
         private const val NOTIF_ID = 1001
+        private const val NOTIF_PERSISTENT_CHANNEL = "jiopos_persistent"
+        private const val NOTIF_PERSISTENT_ID = 1000
 
         @Volatile var instance: JioPOSAccessibilityService? = null
         @Volatile var isJioPosInForeground: Boolean = false
@@ -87,6 +89,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
         } else {
             registerReceiver(notifActionReceiver, filter)
         }
+        startForeground(NOTIF_PERSISTENT_ID, buildPersistentNotification())
     }
 
     override fun onDestroy() {
@@ -95,6 +98,8 @@ class JioPOSAccessibilityService : AccessibilityService() {
         isArmed = false
         confirmLatch?.countDown() // unblock any waiting thread
         unregisterReceiver(notifActionReceiver)
+        @Suppress("DEPRECATION")
+        stopForeground(true)
         Log.i(TAG, "AccessibilityService destroyed")
     }
 
@@ -141,15 +146,41 @@ class JioPOSAccessibilityService : AccessibilityService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val confirmChannel = NotificationChannel(
                 NOTIF_CHANNEL,
                 "Recharge Confirmation",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply { description = "Requires user approval before cash payment" }
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            val persistentChannel = NotificationChannel(
+                NOTIF_PERSISTENT_CHANNEL,
+                "Service Running",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Shows while accessibility service is active"
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(confirmChannel)
+            nm.createNotificationChannel(persistentChannel)
         }
     }
+
+    private fun buildPersistentNotification() =
+        NotificationCompat.Builder(this, NOTIF_PERSISTENT_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(getString(R.string.notif_persistent_title))
+            .setContentText(getString(R.string.notif_persistent_text))
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 0,
+                    Intent(this, MainActivity::class.java),
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                        PendingIntent.FLAG_IMMUTABLE else 0
+                )
+            )
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build()
 
     private fun showConfirmNotification(phone: String, amount: String) {
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)

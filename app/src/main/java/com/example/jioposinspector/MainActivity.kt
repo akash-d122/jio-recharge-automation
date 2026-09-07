@@ -143,19 +143,34 @@ class MainActivity : AppCompatActivity() {
 
         val amount = binding.etPlanAmount.text?.toString()?.trim() ?: "19"
 
+        val launchIntent = packageManager.getLaunchIntentForPackage("com.jio.jpp1")
+
         val service = JioPOSAccessibilityService.instance
         if (service == null) {
-            // Service is enabled in settings but onServiceConnected hasn't fired yet (process just relaunched).
-            // Launch JioPOS first — the system will bind the service, then the automation will proceed.
-            toast("Service reconnecting — switching to JioPOS now, tap Start again if needed")
-            val launchIntent = packageManager.getLaunchIntentForPackage("com.jio.jpp1")
+            // Service is toggled on but onServiceConnected hasn't fired yet — OS re-binds once
+            // an accessibility event arrives (i.e. when JioPOS opens). Launch JioPOS, then poll
+            // for instance on a background thread and arm once it appears.
+            toast("Service reconnecting — launching JioPOS, arming automatically…")
             if (launchIntent != null) startActivity(launchIntent)
+            Thread {
+                val deadline = System.currentTimeMillis() + 8_000
+                while (System.currentTimeMillis() < deadline) {
+                    val svc = JioPOSAccessibilityService.instance
+                    if (svc != null) {
+                        svc.armAutomatedRecharge(phone, amount)
+                        return@Thread
+                    }
+                    Thread.sleep(300)
+                }
+                android.os.Handler(mainLooper).post {
+                    toast("Service didn't reconnect in time — tap Start again")
+                }
+            }.start()
             return
         }
 
         service.armAutomatedRecharge(phone, amount)
 
-        val launchIntent = packageManager.getLaunchIntentForPackage("com.jio.jpp1")
         if (launchIntent != null) {
             startActivity(launchIntent)
         } else {

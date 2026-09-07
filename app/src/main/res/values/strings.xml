@@ -2,4 +2,7 @@
     <string name="app_name">JioPOS Inspector</string>
     <string name="service_label">JioPOS Accessibility Inspector</string>
     <string name="service_description">Diagnostic accessibility service for JioPOS Plus UI inspection. Never performs JioPOS actions and never reads or stores credentials.</string>
+    <string name="notif_persistent_title">JioPOS Inspector active</string>
+    <string name="notif_persistent_text">Tap to open</string>
+    <string name="notif_channel_persistent">jiopos_persistent</string>
 </resources>
