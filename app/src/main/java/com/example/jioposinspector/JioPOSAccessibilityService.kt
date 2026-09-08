@@ -291,19 +291,18 @@ class JioPOSAccessibilityService : AccessibilityService() {
             val phoneField   = editTexts[0]
             val confirmField = editTexts[1]
 
-            safeSleep(500)
+            safeSleep(100)
             setClipboard(phoneNumber)
-            safeSleep(300)
 
             tapNodeCenter(phoneField)
-            safeSleep(400)
+            safeSleep(150)
             phoneField.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            safeSleep(500)
+            safeSleep(150)
 
             tapNodeCenter(confirmField)
-            safeSleep(400)
+            safeSleep(150)
             confirmField.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            safeSleep(500)
+            safeSleep(200)
 
             tapCoord(540f, 300f) // blur to dismiss keyboard and trigger React validation
             // Poll until Continue button appears — no fixed sleep needed before this loop
@@ -326,7 +325,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     }
                     n?.recycle()
                 }
-                Thread.sleep(500)
+                Thread.sleep(150)
             }
 
             if (continueNode == null) return M3EntryResult.ContinueNotFound
@@ -385,7 +384,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 editTexts.forEach { it.recycle() }
                 root.recycle()
             }
-            Thread.sleep(500)
+            Thread.sleep(150)
         }
         Log.i(TAG, "TIMING selectPlan +${selMs()}ms: plan screen detected, planEditText=${planEditText != null}")
 
@@ -426,43 +425,48 @@ class JioPOSAccessibilityService : AccessibilityService() {
             planEditText?.recycle()
             // Continue to the Checkout/Continue sequence below
 
-            safeSleep(1500)
-            val rootAfter = jiopOsRoot()
-            if (rootAfter != null) {
-                val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
-                if (secContinue != null) {
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path secondary Checkout/Continue found, tapping")
-                    val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
-                    tapNodeCenter(secClickable)
-                    secContinue.recycle()
-                    if (secClickable !== secContinue) secClickable.recycle()
-                    safeSleep(2000)
-                    var tertTapped = false
-                    for (tertPass in 0 until 3) {
-                        val rootTert = jiopOsRoot()
-                        if (rootTert != null) {
-                            val tertContinue = findRawTextNode(rootTert, Regex("""(?i)\bcontinue\b"""))
-                            rootTert.recycle()
-                            if (tertContinue != null) {
-                                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary Continue at pass $tertPass")
-                                val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
-                                tapNodeCenter(tertClickable)
-                                tertContinue.recycle()
-                                if (tertClickable !== tertContinue) tertClickable.recycle()
-                                safeSleep(1500)
-                                tertTapped = true
-                                break
-                            }
-                        }
-                        safeSleep(800)
-                    }
-                    if (!tertTapped) {
-                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — coord tap Checkout Continue")
-                        tapCoord(540f, 2078f)
-                        safeSleep(1500)
-                    }
+            var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
+            for (secPass in 0 until 20) {
+                if (!isArmed) break
+                val r = jiopOsRoot()
+                if (r != null) {
+                    secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
+                    r.recycle()
+                    if (secContinue != null) break
                 }
-                rootAfter.recycle()
+                safeSleep(150)
+            }
+            if (secContinue != null) {
+                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path secondary Checkout/Continue found, tapping")
+                val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
+                tapNodeCenter(secClickable)
+                secContinue.recycle()
+                if (secClickable !== secContinue) secClickable.recycle()
+                
+                var tertTapped = false
+                for (tertPass in 0 until 20) {
+                    if (!isArmed) break
+                    val rTert = jiopOsRoot()
+                    if (rTert != null) {
+                        val tertContinue = findRawTextNode(rTert, Regex("""(?i)continue"""))
+                        rTert.recycle()
+                        if (tertContinue != null) {
+                            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary Continue tapped")
+                            val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
+                            tapNodeCenter(tertClickable)
+                            tertContinue.recycle()
+                            if (tertClickable !== tertContinue) tertClickable.recycle()
+                            tertTapped = true
+                            break
+                        }
+                    }
+                    safeSleep(150)
+                }
+                if (!tertTapped) {
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — coord tap")
+                    tapCoord(540f, 2078f)
+                    safeSleep(300)
+                }
             }
             return M3PlanSelectionResult.PlanSelected
         }
@@ -676,46 +680,48 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            safeSleep(1500)
-            val rootAfter = jiopOsRoot()
-            if (rootAfter != null) {
-                val secContinue = findRawTextNode(rootAfter, Regex("""(?i)checkout|continue"""))
-                if (secContinue != null) {
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: secondary Checkout/Continue button found, tapping")
-                    val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
-                    tapNodeCenter(secClickable)
-                    secContinue.recycle()
-                    if (secClickable !== secContinue) secClickable.recycle()
-                    // Poll for a tertiary Continue on the next screen (e.g. after Checkout -> Continue)
-                    safeSleep(2000)
-                    var tertTapped = false
-                    for (tertPass in 0 until 3) {
-                        val rootTert = jiopOsRoot()
-                        if (rootTert != null) {
-                            val tertContinue = findRawTextNode(rootTert, Regex("""(?i)\bcontinue\b"""))
-                            rootTert.recycle()
-                            if (tertContinue != null) {
-                                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary Continue found at pass $tertPass, tapping")
-                                val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
-                                tapNodeCenter(tertClickable)
-                                tertContinue.recycle()
-                                if (tertClickable !== tertContinue) tertClickable.recycle()
-                                safeSleep(1500)
-                                tertTapped = true
-                                break
-                            }
-                        }
-                        safeSleep(800)
-                    }
-                    if (!tertTapped) {
-                        // Checkout "Continue" button has desc='button' with no text — coord fallback
-                        // bounds: 72,1997-1008,2159 → center (540, 2078)
-                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text search failed — coord tap for Checkout Continue")
-                        tapCoord(540f, 2078f)
-                        safeSleep(1500)
-                    }
+            var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
+            for (secPass in 0 until 20) {
+                if (!isArmed) break
+                val r = jiopOsRoot()
+                if (r != null) {
+                    secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
+                    r.recycle()
+                    if (secContinue != null) break
                 }
-                rootAfter.recycle()
+                safeSleep(150)
+            }
+            if (secContinue != null) {
+                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: secondary Checkout/Continue found, tapping")
+                val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
+                tapNodeCenter(secClickable)
+                secContinue.recycle()
+                if (secClickable !== secContinue) secClickable.recycle()
+                
+                var tertTapped = false
+                for (tertPass in 0 until 20) {
+                    if (!isArmed) break
+                    val rTert = jiopOsRoot()
+                    if (rTert != null) {
+                        val tertContinue = findRawTextNode(rTert, Regex("""(?i)continue"""))
+                        rTert.recycle()
+                        if (tertContinue != null) {
+                            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary Continue tapped")
+                            val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
+                            tapNodeCenter(tertClickable)
+                            tertContinue.recycle()
+                            if (tertClickable !== tertContinue) tertClickable.recycle()
+                            tertTapped = true
+                            break
+                        }
+                    }
+                    safeSleep(150)
+                }
+                if (!tertTapped) {
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — coord tap")
+                    tapCoord(540f, 2078f)
+                    safeSleep(300)
+                }
             }
         } finally {
             amountNode.recycle()
@@ -833,7 +839,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     break
                 }
             }
-            Thread.sleep(500)
+            Thread.sleep(150)
         }
         if (cashOptionNode != null) {
             try {
@@ -855,7 +861,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
         // package prefix won't match it. Instead: wait for "Cash details" header to appear
         // with non-zero height (panel open), then find the bottom-most visible clickable Button
         // in the same subtree (that's the submit/complete button).
-        safeSleep(1500) // allow Cash panel to animate open
+        safeSleep(300) // allow Cash panel to animate open
         var finalSubmitNode: AccessibilityNodeInfo? = null
         val step2Deadline = System.currentTimeMillis() + 12_000
         while (System.currentTimeMillis() < step2Deadline) {
@@ -869,7 +875,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 root.recycle()
             }
-            Thread.sleep(500)
+            Thread.sleep(150)
         }
         if (finalSubmitNode == null) return M4CashResult.SubmitButtonNotFound
 
@@ -992,7 +998,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                             else -> { /* UNKNOWN or transitioning — keep waiting */ }
                         }
                     }
-                    Thread.sleep(500)
+                    Thread.sleep(150)
                 }
 
                 if (!isArmed) return@Thread
@@ -1003,7 +1009,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 // Phase 2: Dismiss any post-login overlays (survey, feedback dialog, etc.)
                 Log.i(TAG, "TIMING t+${ms()}ms: Phase2 start — dismissing overlays")
                 // Loop up to 3 times — multiple dialogs can appear sequentially.
-                safeSleep(2000) // let React settle after login
+                safeSleep(500) // let React settle after login
                 // Dismiss texts cover both the native survey and any RN feedback/rating dialogs.
                 val dismissTexts = listOf(
                     "Maybe Later", "Maybe later", "Not Now", "Not now",
@@ -1043,7 +1049,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                         }
                     }
                     root.recycle()
-                    if (dismissed) safeSleep(1500) // wait for overlay to clear
+                    if (dismissed) safeSleep(400) // wait for overlay to clear
                 }
 
                 // Phase 3: Navigate to Recharge from Home (if not already there)
@@ -1067,13 +1073,13 @@ class JioPOSAccessibilityService : AccessibilityService() {
                                 r.recycle()
                             }
                         }
-                        Thread.sleep(500)
+                        Thread.sleep(150)
                     }
                     if (!reachedHome) {
                         showToast("Not on Home screen. Aborting.")
                         isArmed = false; return@Thread
                     }
-                    safeSleep(1000)
+                    safeSleep(250)
                     // Dismiss any feedback/rating popup that appears on the Home screen
                     run {
                         val root = jiopOsRoot()
@@ -1101,7 +1107,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                                 }
                             }
                             root.recycle()
-                            if (dismissed) safeSleep(1000)
+                            if (dismissed) safeSleep(250)
                         }
                     }
                     val navResult = navigateToRecharge()
@@ -1118,7 +1124,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     showToast("Recharge screen didn't load. Aborting.")
                     isArmed = false; return@Thread
                 }
-                safeSleep(1500)
+                safeSleep(250)
 
                 // Phase 5: Enter mobile number
                 Log.i(TAG, "TIMING t+${ms()}ms: Phase5 start — enterMobileNumber")
@@ -1127,7 +1133,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     showToast("Failed to enter number: $entryResult. Aborting.")
                     isArmed = false; return@Thread
                 }
-                safeSleep(1500)
+                safeSleep(250)
 
                 // Phase 6: Select plan — selectPlan() polls internally for the plan screen
                 Log.i(TAG, "TIMING t+${ms()}ms: Phase6 start — selectPlan")
@@ -1137,7 +1143,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     isArmed = false; return@Thread
                 }
                 Log.i(TAG, "TIMING t+${ms()}ms: Phase6 done — selectPlan=$planResult")
-                safeSleep(1000)
+                safeSleep(250)
 
                 // Phase 7: Navigate Buy → Continue → Cash → human confirmation → submit
                 // payCashAndConfirm contains the latch-based notification confirmation
