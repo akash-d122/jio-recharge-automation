@@ -7,5 +7,4 @@
     android:canPerformGestures="true"
     android:description="@string/service_description"
     android:notificationTimeout="100"
-    android:packageNames="com.jio.jpp1"
-    android:foregroundServiceType="connectedDevice" />
+    android:packageNames="com.jio.jpp1" />
