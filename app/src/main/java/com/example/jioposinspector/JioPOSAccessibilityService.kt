@@ -89,7 +89,11 @@ class JioPOSAccessibilityService : AccessibilityService() {
         } else {
             registerReceiver(notifActionReceiver, filter)
         }
-        startForeground(NOTIF_PERSISTENT_ID, buildPersistentNotification())
+        try {
+            startForeground(NOTIF_PERSISTENT_ID, buildPersistentNotification())
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service: ${e.message}")
+        }
     }
 
     override fun onDestroy() {

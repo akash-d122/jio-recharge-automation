@@ -163,7 +163,12 @@ class MainActivity : AppCompatActivity() {
                     Thread.sleep(300)
                 }
                 android.os.Handler(mainLooper).post {
-                    toast("Service didn't reconnect in time — tap Start again")
+                    toast("Service is stuck. Please turn it OFF and back ON.")
+                    try {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        // ignore
+                    }
                 }
             }.start()
             return
