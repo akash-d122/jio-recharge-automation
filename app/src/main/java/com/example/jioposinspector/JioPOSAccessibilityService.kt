@@ -406,12 +406,12 @@ class JioPOSAccessibilityService : AccessibilityService() {
             }
             walk(root); root.recycle(); return found
         }
-        val fastPathDeadline = System.currentTimeMillis() + 8000L
+        val fastPathDeadline = System.currentTimeMillis() + 1500L
         var fastPathCardNode: AccessibilityNodeInfo? = null
         while (System.currentTimeMillis() < fastPathDeadline && isArmed) {
             fastPathCardNode = findFastPathCard()
             if (fastPathCardNode != null) break
-            Thread.sleep(200)
+            Thread.sleep(120)
         }
         Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path poll done, card=${fastPathCardNode != null}")
 
@@ -476,17 +476,17 @@ class JioPOSAccessibilityService : AccessibilityService() {
         // Step 2: paste amount into filter field then dismiss keyboard via accessibility actions only
         try {
             setClipboard(amount)
-            safeSleep(300)
+            safeSleep(150)
             if (planEditText != null) {
                 val b = Rect(); planEditText.getBoundsInScreen(b)
                 Log.i(TAG, "TIMING selectPlan +${selMs()}ms: native EditText bounds=\$b, tapping + pasting")
                 tapNodeCenter(planEditText) // coordinate tap — confirmed to open keyboard
-                safeSleep(500)
+                safeSleep(200)
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                safeSleep(600)
+                safeSleep(200)
                 // Try ACTION_CLEAR_FOCUS first; if RN ignores it the fallback tapCoord covers it
                 planEditText.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
-                safeSleep(300)
+                safeSleep(150)
                 // Tap app toolbar area (y=80) — above WebView (starts at y≈106)
                 // Cannot trigger WebView touch events; reliably removes keyboard focus
                 tapCoord(540f, 80f)
@@ -494,9 +494,9 @@ class JioPOSAccessibilityService : AccessibilityService() {
             } else {
                 Log.i(TAG, "selectPlan: no native EditText, tapping plan filter at (540,921)")
                 tapCoord(540f, 921f) // center of EditText: bounds 108,872,970,970
-                safeSleep(600)
+                safeSleep(300)
                 performGlobalAction(7) // GLOBAL_ACTION_PASTE
-                safeSleep(500)
+                safeSleep(250)
                 tapCoord(540f, 80f) // toolbar area above WebView
                 Log.i(TAG, "selectPlan: global paste sent")
             }
