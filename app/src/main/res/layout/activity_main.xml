@@ -46,6 +46,13 @@
         android:text="Open Accessibility Settings" />
 
     <Button
+        android:id="@+id/btnBatteryOptimization"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Fix Background &amp; Autostart (Prevent Auto-Kill)" />
+
+    <Button
         android:id="@+id/btnCapture"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -90,9 +90,24 @@ class JioPOSAccessibilityService : AccessibilityService() {
             registerReceiver(notifActionReceiver, filter)
         }
         try {
-            startForeground(NOTIF_PERSISTENT_ID, buildPersistentNotification())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIF_PERSISTENT_ID,
+                    buildPersistentNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIF_PERSISTENT_ID,
+                    buildPersistentNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
+                )
+            } else {
+                startForeground(NOTIF_PERSISTENT_ID, buildPersistentNotification())
+            }
+            Log.i(TAG, "Foreground service started successfully (specialUse)")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground service: ${e.message}")
+            Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
         }
     }
 
@@ -213,9 +228,16 @@ class JioPOSAccessibilityService : AccessibilityService() {
 
     // ── root node helper ─────────────────────────────────────────────────────
     fun jiopOsRoot(): AccessibilityNodeInfo? {
-        return windows?.firstOrNull {
+        val winRoot = windows?.firstOrNull {
             it.root?.packageName?.toString() == "com.jio.jpp1"
         }?.root
+        if (winRoot != null) return winRoot
+
+        val active = rootInActiveWindow
+        return if (active?.packageName?.toString() == "com.jio.jpp1") active else {
+            active?.recycle()
+            null
+        }
     }
 
     // ── diagnostics (M1) ─────────────────────────────────────────────────────

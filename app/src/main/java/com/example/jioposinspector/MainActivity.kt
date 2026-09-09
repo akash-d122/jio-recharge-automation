@@ -46,9 +46,72 @@ class MainActivity : AppCompatActivity() {
         binding.btnEnableService.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        binding.btnBatteryOptimization.setOnClickListener {
+            handleBatteryAndAutostart()
+        }
         binding.btnCapture.setOnClickListener { doCapture() }
         binding.btnShare.setOnClickListener { doShare() }
         binding.btnStartAutomation.setOnClickListener { doStartAutomation() }
+    }
+
+    private fun isBatteryOptimized(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            return pm?.isIgnoringBatteryOptimizations(packageName) == false
+        }
+        return false
+    }
+
+    private fun handleBatteryAndAutostart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            if (pm?.isIgnoringBatteryOptimizations(packageName) == false) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                    toast("Please select 'Don't optimize / Unrestricted'")
+                    return
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        return
+                    } catch (e2: Exception) {
+                        // fallback to OEM settings
+                    }
+                }
+            }
+        }
+        openOemSettings()
+    }
+
+    private fun openOemSettings() {
+        val intents = listOf(
+            // Xiaomi / Poco (MIUI / HyperOS Autostart)
+            Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            // Realme / Oppo / ColorOS (Startup Manager)
+            Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
+            // Vivo / iQOO
+            Intent().setComponent(android.content.ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+            // App Info settings
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$packageName")
+            }
+        )
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                toast("Enable 'Autostart' & set Battery to 'No restrictions'")
+                return
+            } catch (e: Exception) {
+                // try next
+            }
+        }
     }
 
     override fun onResume() {
@@ -147,23 +210,22 @@ class MainActivity : AppCompatActivity() {
 
         val service = JioPOSAccessibilityService.instance
         if (service == null) {
-            // Service is toggled on but onServiceConnected hasn't fired yet — OS re-binds once
-            // an accessibility event arrives (i.e. when JioPOS opens). Launch JioPOS, then poll
-            // for instance on a background thread and arm once it appears.
-            toast("Service reconnecting — launching JioPOS, arming automatically…")
+            // Service is toggled on in settings, but process was cold or sleeping.
+            // Launch JioPOS and poll for up to 15s for the OS to bind the service.
+            toast("Waking service — launching JioPOS, arming automatically…")
             if (launchIntent != null) startActivity(launchIntent)
             Thread {
-                val deadline = System.currentTimeMillis() + 8_000
+                val deadline = System.currentTimeMillis() + 15_000
                 while (System.currentTimeMillis() < deadline) {
                     val svc = JioPOSAccessibilityService.instance
                     if (svc != null) {
                         svc.armAutomatedRecharge(phone, amount)
                         return@Thread
                     }
-                    Thread.sleep(300)
+                    Thread.sleep(250)
                 }
                 android.os.Handler(mainLooper).post {
-                    toast("Service is stuck. Please turn it OFF and back ON.")
+                    toast("Service is asleep. Toggle it OFF and back ON, then tap 'Fix Background & Autostart'.")
                     try {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     } catch (e: Exception) {
