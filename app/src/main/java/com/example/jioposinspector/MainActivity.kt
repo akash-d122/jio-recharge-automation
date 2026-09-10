@@ -19,8 +19,6 @@ import com.example.jioposinspector.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var lastReport: DiagnosticReport? = null
-
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* result ignored — permission is best-effort */ }
@@ -49,8 +47,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnBatteryOptimization.setOnClickListener {
             handleBatteryAndAutostart()
         }
-        binding.btnCapture.setOnClickListener { doCapture() }
-        binding.btnShare.setOnClickListener { doShare() }
         binding.btnStartAutomation.setOnClickListener { doStartAutomation() }
     }
 
@@ -122,6 +118,12 @@ class MainActivity : AppCompatActivity() {
         }
         ContextCompat.registerReceiver(this, statusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         updateStatusUi()
+
+        if (isAccessibilityServiceEnabled()) {
+            try {
+                ContextCompat.startForegroundService(this, Intent(this, KeepAliveService::class.java))
+            } catch (e: Exception) { e.printStackTrace() }
+        }
     }
 
     override fun onPause() {
@@ -160,36 +162,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvJioPosState.text = "State: ${state.label()}"
 
-        binding.btnCapture.isEnabled = serviceEnabled && jioPosActive
-        binding.btnShare.isEnabled   = lastReport != null
         binding.btnStartAutomation.isEnabled = serviceEnabled
-    }
-
-    private fun doCapture() {
-        val service = JioPOSAccessibilityService.instance
-        if (service == null) {
-            toast("Service not running — enable it in Accessibility Settings")
-            return
-        }
-        val nodes = service.captureCurrentScreen()
-        val report = DiagnosticReport(
-            packageName   = JioPOSAccessibilityService.lastDetectedPackage ?: "unknown",
-            activityName  = JioPOSAccessibilityService.lastActivityClass,
-            captureTimeMs = System.currentTimeMillis(),
-            nodes         = nodes
-        )
-        lastReport = report
-        binding.tvLastCapture.text =
-            "Captured ${nodes.size} nodes  activity=${report.activityName?.substringAfterLast('.') ?: "?"}"
-        binding.tvLog.text =
-            ReportBuilder.buildText(report).take(4000) + "\n\n[Tap Export/Share for full report]"
-        binding.btnShare.isEnabled = true
-        toast("Captured ${nodes.size} nodes")
-    }
-
-    private fun doShare() {
-        val report = lastReport ?: run { toast("No report captured yet"); return }
-        startActivity(Intent.createChooser(ReportExporter.saveAndShare(this, report), "Share diagnostic report"))
     }
 
     private fun doStartAutomation() {

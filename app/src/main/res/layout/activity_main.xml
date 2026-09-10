@@ -30,14 +30,6 @@
         android:textSize="14sp"
         android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/tvLastCapture"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Last capture: none"
-        android:textSize="13sp" />
-
     <Button
         android:id="@+id/btnEnableService"
         android:layout_width="match_parent"
@@ -51,22 +43,6 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:text="Fix Background &amp; Autostart (Prevent Auto-Kill)" />
-
-    <Button
-        android:id="@+id/btnCapture"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:enabled="false"
-        android:text="Capture Current Screen" />
-
-    <Button
-        android:id="@+id/btnShare"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:enabled="false"
-        android:text="Export / Share Report" />
 
     <!-- M5: Automated Flow -->
     <LinearLayout
@@ -105,20 +81,5 @@
         android:textStyle="bold"
         android:backgroundTint="#4CAF50"
         android:textColor="#FFFFFF" />
-
-    <ScrollView
-
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="12dp"
-        android:layout_weight="1">
-
-        <TextView
-            android:id="@+id/tvLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textSize="11sp" />
-    </ScrollView>
 
 </LinearLayout>

@@ -1,4 +1,4 @@
-﻿package com.example.jioposinspector
+package com.example.jioposinspector
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
