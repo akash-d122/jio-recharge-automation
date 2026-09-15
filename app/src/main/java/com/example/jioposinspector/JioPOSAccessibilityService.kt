@@ -34,6 +34,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
         const val ACTION_CAPTURE_DONE  = "com.example.jioposinspector.CAPTURE_DONE"
         const val ACTION_NOTIF_CONFIRM = "com.example.jioposinspector.NOTIF_CONFIRM"
         const val ACTION_NOTIF_CANCEL  = "com.example.jioposinspector.NOTIF_CANCEL"
+        const val ACTION_DISABLE_SERVICE = "com.example.jioposinspector.DISABLE_SERVICE"
         private const val NOTIF_CHANNEL = "recharge_confirm"
         private const val NOTIF_ID = 1001
         private const val NOTIF_PERSISTENT_CHANNEL = "jiopos_persistent"

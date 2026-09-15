@@ -7,4 +7,5 @@
     android:canPerformGestures="true"
     android:description="@string/service_description"
     android:notificationTimeout="100"
+    android:isAccessibilityTool="true"
     android:packageNames="com.jio.jpp1,com.example.jioposinspector" />
