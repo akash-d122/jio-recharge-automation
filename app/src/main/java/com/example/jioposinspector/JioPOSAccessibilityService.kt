@@ -476,30 +476,29 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 secContinue.recycle()
                 if (secClickable !== secContinue) secClickable.recycle()
                 
-                var tertTapped = false
-                for (tertPass in 0 until 20) {
+                // Wait for the Cart screen to fully load
+                var cartLoaded = false
+                for (cartPass in 0 until 50) { // Up to 7.5 seconds
                     if (!isArmed) break
-                    val rTert = jiopOsRoot()
-                    if (rTert != null) {
-                        val tertContinue = findRawTextNode(rTert, Regex("""(?i)continue"""))
-                        rTert.recycle()
-                        if (tertContinue != null) {
-                            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary Continue tapped")
-                            val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
-                            tapNodeCenter(tertClickable)
-                            tertContinue.recycle()
-                            if (tertClickable !== tertContinue) tertClickable.recycle()
-                            tertTapped = true
+                    val rCart = jiopOsRoot()
+                    if (rCart != null) {
+                        val cartAnchor = findRawTextNode(rCart, Regex("""(?i)cart\s*total"""))
+                        if (cartAnchor != null) {
+                            cartLoaded = true
+                            cartAnchor.recycle()
+                            rCart.recycle()
                             break
                         }
+                        rCart.recycle()
                     }
                     safeSleep(150)
                 }
-                if (!tertTapped) {
-                    val fallbackRoot = jiopOsRoot()
+
+                if (cartLoaded) {
+                    safeSleep(300) // Buffer for animation
                     var dynamicTapY = -1f
+                    val fallbackRoot = jiopOsRoot()
                     if (fallbackRoot != null) {
-                        // Attempt to find text node directly if RN exposed it
                         val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
                         if (continueTxt != null) {
                             val cb = Rect(); continueTxt.getBoundsInScreen(cb)
@@ -508,23 +507,19 @@ class JioPOSAccessibilityService : AccessibilityService() {
                         }
                         fallbackRoot.recycle()
                     }
-
                     if (dynamicTapY < 0) {
                         try {
-                            // The true usable screen height (excludes system navigation button bar)
-                            val dm = resources.displayMetrics
-                            val usableHeight = dm.heightPixels.toFloat()
-                            // Original coordinates anchored 'Continue' at Y=2078 on a 2400 screen.
-                            // Distance from bottom is 2400 - 2078 = 322.
-                            // This reliably shifts the tap upward if soft nav buttons consume screen height.
-                            dynamicTapY = usableHeight - 322f
+                            dynamicTapY = resources.displayMetrics.heightPixels.toFloat() - 322f
                         } catch (e: Exception) {
                             dynamicTapY = 2078f
                         }
                     }
-
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Cart loaded — tapping Continue at Y=$dynamicTapY")
                     tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
+                    safeSleep(300)
+                } else {
+                    Log.w(TAG, "TIMING selectPlan +${selMs()}ms: Cart never loaded, blind coordinate fallback")
+                    try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch(e: Exception) {}
                     safeSleep(300)
                 }
             }
@@ -768,28 +763,28 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 secContinue.recycle()
                 if (secClickable !== secContinue) secClickable.recycle()
                 
-                var tertTapped = false
-                for (tertPass in 0 until 20) {
+                // Wait for the Cart screen to fully load
+                var cartLoaded = false
+                for (cartPass in 0 until 50) { // Up to 7.5 seconds
                     if (!isArmed) break
-                    val rTert = jiopOsRoot()
-                    if (rTert != null) {
-                        val tertContinue = findRawTextNode(rTert, Regex("""(?i)continue"""))
-                        rTert.recycle()
-                        if (tertContinue != null) {
-                            Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary Continue tapped")
-                            val tertClickable = JioPosStateDetector.nearestClickableAncestor(tertContinue) ?: tertContinue
-                            tapNodeCenter(tertClickable)
-                            tertContinue.recycle()
-                            if (tertClickable !== tertContinue) tertClickable.recycle()
-                            tertTapped = true
+                    val rCart = jiopOsRoot()
+                    if (rCart != null) {
+                        val cartAnchor = findRawTextNode(rCart, Regex("""(?i)cart\s*total"""))
+                        if (cartAnchor != null) {
+                            cartLoaded = true
+                            cartAnchor.recycle()
+                            rCart.recycle()
                             break
                         }
+                        rCart.recycle()
                     }
                     safeSleep(150)
                 }
-                if (!tertTapped) {
-                    val fallbackRoot = jiopOsRoot()
+
+                if (cartLoaded) {
+                    safeSleep(300) // Buffer for animation
                     var dynamicTapY = -1f
+                    val fallbackRoot = jiopOsRoot()
                     if (fallbackRoot != null) {
                         val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
                         if (continueTxt != null) {
@@ -799,19 +794,19 @@ class JioPOSAccessibilityService : AccessibilityService() {
                         }
                         fallbackRoot.recycle()
                     }
-
                     if (dynamicTapY < 0) {
                         try {
-                            val dm = resources.displayMetrics
-                            val usableHeight = dm.heightPixels.toFloat()
-                            dynamicTapY = usableHeight - 322f
+                            dynamicTapY = resources.displayMetrics.heightPixels.toFloat() - 322f
                         } catch (e: Exception) {
                             dynamicTapY = 2078f
                         }
                     }
-
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Cart loaded — tapping Continue at Y=$dynamicTapY")
                     tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
+                    safeSleep(300)
+                } else {
+                    Log.w(TAG, "TIMING selectPlan +${selMs()}ms: Cart never loaded, blind coordinate fallback")
+                    try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch(e: Exception) {}
                     safeSleep(300)
                 }
             }
