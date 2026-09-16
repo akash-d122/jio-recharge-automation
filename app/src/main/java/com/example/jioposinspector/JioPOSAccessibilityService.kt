@@ -447,83 +447,7 @@ class JioPOSAccessibilityService : AccessibilityService() {
             }
             planEditText?.recycle()
             // Continue to the Checkout/Continue sequence below
-
-            var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
-            for (secPass in 0 until 40) {
-                if (!isArmed) break
-                val r = jiopOsRoot()
-                if (r != null) {
-                    val upsell = findRawTextNode(r, Regex("""(?i)go\s+with\s+current\s+selection"""))
-                    if (upsell != null) {
-                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Upsell popup detected, bypassing")
-                        val upsellClickable = JioPosStateDetector.nearestClickableAncestor(upsell) ?: upsell
-                        tapNodeCenter(upsellClickable)
-                        upsell.recycle()
-                        if (upsellClickable !== upsell) upsellClickable.recycle()
-                        safeSleep(400)
-                    }
-
-                    secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
-                    r.recycle()
-                    if (secContinue != null) break
-                }
-                safeSleep(150)
-            }
-            if (secContinue != null) {
-                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path secondary Checkout/Continue found, tapping")
-                val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
-                tapNodeCenter(secClickable)
-                secContinue.recycle()
-                if (secClickable !== secContinue) secClickable.recycle()
-                
-                // Wait for the Cart screen to fully load
-                var cartLoaded = false
-                for (cartPass in 0 until 50) { // Up to 7.5 seconds
-                    if (!isArmed) break
-                    val rCart = jiopOsRoot()
-                    if (rCart != null) {
-                        val cartAnchor = findRawTextNode(rCart, Regex("""(?i)cart\s*total"""))
-                        if (cartAnchor != null) {
-                            cartLoaded = true
-                            cartAnchor.recycle()
-                            rCart.recycle()
-                            break
-                        }
-                        rCart.recycle()
-                    }
-                    safeSleep(150)
-                }
-
-                if (cartLoaded) {
-                    safeSleep(300) // Buffer for animation
-                    var dynamicTapY = -1f
-                    val fallbackRoot = jiopOsRoot()
-                    if (fallbackRoot != null) {
-                        val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
-                        if (continueTxt != null) {
-                            val cb = Rect(); continueTxt.getBoundsInScreen(cb)
-                            dynamicTapY = cb.centerY().toFloat()
-                            continueTxt.recycle()
-                        }
-                        fallbackRoot.recycle()
-                    }
-                    if (dynamicTapY < 0) {
-                        try {
-                            dynamicTapY = resources.displayMetrics.heightPixels.toFloat() - 322f
-                        } catch (e: Exception) {
-                            dynamicTapY = 2078f
-                        }
-                    }
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Cart loaded — tapping Continue at Y=$dynamicTapY")
-                    tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
-                    safeSleep(300)
-                } else {
-                    Log.w(TAG, "TIMING selectPlan +${selMs()}ms: Cart never loaded, blind coordinate fallback")
-                    try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch(e: Exception) {}
-                    safeSleep(300)
-                }
-            }
-            return M3PlanSelectionResult.PlanSelected
+            return navigateThroughCheckoutAndReturn()
         }
 
         Log.i(TAG, "TIMING selectPlan +${selMs()}ms: no fast-path card — falling back to filter+scroll")
@@ -735,85 +659,57 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
             }
 
-            var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
-            for (secPass in 0 until 40) {
-                if (!isArmed) break
-                val r = jiopOsRoot()
-                if (r != null) {
-                    val upsell = findRawTextNode(r, Regex("""(?i)go\s+with\s+current\s+selection"""))
-                    if (upsell != null) {
-                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Upsell popup detected, bypassing")
-                        val upsellClickable = JioPosStateDetector.nearestClickableAncestor(upsell) ?: upsell
-                        tapNodeCenter(upsellClickable)
-                        upsell.recycle()
-                        if (upsellClickable !== upsell) upsellClickable.recycle()
-                        safeSleep(400)
-                    }
-
-                    secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
-                    r.recycle()
-                    if (secContinue != null) break
-                }
-                safeSleep(150)
-            }
-            if (secContinue != null) {
-                Log.i(TAG, "TIMING selectPlan +${selMs()}ms: secondary Checkout/Continue found, tapping")
-                val secClickable = JioPosStateDetector.nearestClickableAncestor(secContinue) ?: secContinue
-                tapNodeCenter(secClickable)
-                secContinue.recycle()
-                if (secClickable !== secContinue) secClickable.recycle()
-                
-                // Wait for the Cart screen to fully load
-                var cartLoaded = false
-                for (cartPass in 0 until 50) { // Up to 7.5 seconds
-                    if (!isArmed) break
-                    val rCart = jiopOsRoot()
-                    if (rCart != null) {
-                        val cartAnchor = findRawTextNode(rCart, Regex("""(?i)cart\s*total"""))
-                        if (cartAnchor != null) {
-                            cartLoaded = true
-                            cartAnchor.recycle()
-                            rCart.recycle()
-                            break
-                        }
-                        rCart.recycle()
-                    }
-                    safeSleep(150)
-                }
-
-                if (cartLoaded) {
-                    safeSleep(300) // Buffer for animation
-                    var dynamicTapY = -1f
-                    val fallbackRoot = jiopOsRoot()
-                    if (fallbackRoot != null) {
-                        val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
-                        if (continueTxt != null) {
-                            val cb = Rect(); continueTxt.getBoundsInScreen(cb)
-                            dynamicTapY = cb.centerY().toFloat()
-                            continueTxt.recycle()
-                        }
-                        fallbackRoot.recycle()
-                    }
-                    if (dynamicTapY < 0) {
-                        try {
-                            dynamicTapY = resources.displayMetrics.heightPixels.toFloat() - 322f
-                        } catch (e: Exception) {
-                            dynamicTapY = 2078f
-                        }
-                    }
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Cart loaded — tapping Continue at Y=$dynamicTapY")
-                    tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
-                    safeSleep(300)
-                } else {
-                    Log.w(TAG, "TIMING selectPlan +${selMs()}ms: Cart never loaded, blind coordinate fallback")
-                    try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch(e: Exception) {}
-                    safeSleep(300)
-                }
-            }
+            return navigateThroughCheckoutAndReturn()
         } finally {
             amountNode.recycle()
         }
 
+        return M3PlanSelectionResult.PlanSelected
+    }
+
+    private fun navigateThroughCheckoutAndReturn(): M3PlanSelectionResult {
+        Log.i(TAG, "TIMING selectPlan: Tapped plan, starting Universal Navigation Loop")
+        var cartLoaded = false
+        for (navPass in 0 until 100) {
+            if (!isArmed) break
+            val r = jiopOsRoot()
+            if (r != null) {
+                val upsell = findRawTextNode(r, Regex("""(?i)go\s+with\s+current\s+selection"""))
+                if (upsell != null) {
+                    val upsellClickable = JioPosStateDetector.nearestClickableAncestor(upsell) ?: upsell
+                    tapNodeCenter(upsellClickable)
+                    upsell.recycle()
+                    if (upsellClickable !== upsell) upsellClickable.recycle()
+                    r.recycle()
+                    safeSleep(600)
+                    continue
+                }
+
+                val cartAnchor = findRawTextNode(r, Regex("""(?i)cart\s*total|cancel\s*transaction"""))
+                if (cartAnchor != null) {
+                    cartAnchor.recycle()
+                    cartLoaded = true
+                    r.recycle()
+                    break
+                }
+
+                val selectedPlan = findRawTextNode(r, Regex("""(?i)selected\s+plan"""))
+                if (selectedPlan != null) {
+                    selectedPlan.recycle()
+                    if (navPass > 0 && navPass % 10 == 0) {
+                        try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch (e: Exception) { tapCoord(540f, 2078f) }
+                    }
+                }
+                r.recycle()
+            }
+            safeSleep(150)
+        }
+
+        if (cartLoaded) {
+            safeSleep(400)
+            try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch (e: Exception) { tapCoord(540f, 2078f) }
+            safeSleep(300)
+        }
         return M3PlanSelectionResult.PlanSelected
     }
 
