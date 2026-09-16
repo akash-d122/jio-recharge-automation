@@ -449,10 +449,20 @@ class JioPOSAccessibilityService : AccessibilityService() {
             // Continue to the Checkout/Continue sequence below
 
             var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
-            for (secPass in 0 until 20) {
+            for (secPass in 0 until 40) {
                 if (!isArmed) break
                 val r = jiopOsRoot()
                 if (r != null) {
+                    val upsell = findRawTextNode(r, Regex("""(?i)go\s+with\s+current\s+selection"""))
+                    if (upsell != null) {
+                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Upsell popup detected, bypassing")
+                        val upsellClickable = JioPosStateDetector.nearestClickableAncestor(upsell) ?: upsell
+                        tapNodeCenter(upsellClickable)
+                        upsell.recycle()
+                        if (upsellClickable !== upsell) upsellClickable.recycle()
+                        safeSleep(400)
+                    }
+
                     secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
                     r.recycle()
                     if (secContinue != null) break
@@ -731,10 +741,20 @@ class JioPOSAccessibilityService : AccessibilityService() {
             }
 
             var secContinue: android.view.accessibility.AccessibilityNodeInfo? = null
-            for (secPass in 0 until 20) {
+            for (secPass in 0 until 40) {
                 if (!isArmed) break
                 val r = jiopOsRoot()
                 if (r != null) {
+                    val upsell = findRawTextNode(r, Regex("""(?i)go\s+with\s+current\s+selection"""))
+                    if (upsell != null) {
+                        Log.i(TAG, "TIMING selectPlan +${selMs()}ms: Upsell popup detected, bypassing")
+                        val upsellClickable = JioPosStateDetector.nearestClickableAncestor(upsell) ?: upsell
+                        tapNodeCenter(upsellClickable)
+                        upsell.recycle()
+                        if (upsellClickable !== upsell) upsellClickable.recycle()
+                        safeSleep(400)
+                    }
+
                     secContinue = findRawTextNode(r, Regex("""(?i)checkout|continue"""))
                     r.recycle()
                     if (secContinue != null) break
