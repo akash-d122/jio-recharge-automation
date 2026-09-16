@@ -489,30 +489,28 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     val fallbackRoot = jiopOsRoot()
                     var dynamicTapY = -1f
                     if (fallbackRoot != null) {
-                        // 1. Try finding exact "Continue" text node first
+                        // Attempt to find text node directly if RN exposed it
                         val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
                         if (continueTxt != null) {
                             val cb = Rect(); continueTxt.getBoundsInScreen(cb)
                             dynamicTapY = cb.centerY().toFloat()
                             continueTxt.recycle()
-                        } else {
-                            // 2. Try finding "Cancel transaction" text, which is right below "Continue"
-                            val cancelTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)cancel\s*transaction"""))
-                            if (cancelTxt != null) {
-                                val cb = Rect(); cancelTxt.getBoundsInScreen(cb)
-                                // Gap + half-button approx 195 pixels on a 1080x2400 screen. We offset from Cancel center.
-                                dynamicTapY = cb.centerY().toFloat() - 195f
-                                cancelTxt.recycle()
-                            }
-                        }
-
-                        // 3. Fallback to window bottom offset
-                        if (dynamicTapY < 0) {
-                            val b = Rect()
-                            fallbackRoot.getBoundsInScreen(b)
-                            dynamicTapY = if (b.bottom > 0) b.bottom - 322f else 2078f
                         }
                         fallbackRoot.recycle()
+                    }
+
+                    if (dynamicTapY < 0) {
+                        try {
+                            // The true usable screen height (excludes system navigation button bar)
+                            val dm = resources.displayMetrics
+                            val usableHeight = dm.heightPixels.toFloat()
+                            // Original coordinates anchored 'Continue' at Y=2078 on a 2400 screen.
+                            // Distance from bottom is 2400 - 2078 = 322.
+                            // This reliably shifts the tap upward if soft nav buttons consume screen height.
+                            dynamicTapY = usableHeight - 322f
+                        } catch (e: Exception) {
+                            dynamicTapY = 2078f
+                        }
                     }
 
                     Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
@@ -778,21 +776,18 @@ class JioPOSAccessibilityService : AccessibilityService() {
                             val cb = Rect(); continueTxt.getBoundsInScreen(cb)
                             dynamicTapY = cb.centerY().toFloat()
                             continueTxt.recycle()
-                        } else {
-                            val cancelTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)cancel\s*transaction"""))
-                            if (cancelTxt != null) {
-                                val cb = Rect(); cancelTxt.getBoundsInScreen(cb)
-                                dynamicTapY = cb.centerY().toFloat() - 195f
-                                cancelTxt.recycle()
-                            }
-                        }
-
-                        if (dynamicTapY < 0) {
-                            val b = Rect()
-                            fallbackRoot.getBoundsInScreen(b)
-                            dynamicTapY = if (b.bottom > 0) b.bottom - 322f else 2078f
                         }
                         fallbackRoot.recycle()
+                    }
+
+                    if (dynamicTapY < 0) {
+                        try {
+                            val dm = resources.displayMetrics
+                            val usableHeight = dm.heightPixels.toFloat()
+                            dynamicTapY = usableHeight - 322f
+                        } catch (e: Exception) {
+                            dynamicTapY = 2078f
+                        }
                     }
 
                     Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
