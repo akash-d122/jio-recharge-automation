@@ -487,16 +487,36 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 if (!tertTapped) {
                     val fallbackRoot = jiopOsRoot()
-                    val b = android.graphics.Rect()
-                    fallbackRoot?.getBoundsInScreen(b)
-                    fallbackRoot?.recycle()
-                    // Y=2078 was optimal on a 2400-height screen with gestures (nav bar off).
-                    // Distance from bottom is 2400 - 2078 = 322.
-                    // By recalculating from the active window bottom, this shifts up when nav bar is on,
-                    // avoiding the "Cancel Transaction" button below it.
-                    val tapY = if (b.bottom > 0) b.bottom - 322f else 2078f
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — dynamic coord tap at Y=$tapY")
-                    tapCoord(540f, tapY)
+                    var dynamicTapY = -1f
+                    if (fallbackRoot != null) {
+                        // 1. Try finding exact "Continue" text node first
+                        val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
+                        if (continueTxt != null) {
+                            val cb = Rect(); continueTxt.getBoundsInScreen(cb)
+                            dynamicTapY = cb.centerY().toFloat()
+                            continueTxt.recycle()
+                        } else {
+                            // 2. Try finding "Cancel transaction" text, which is right below "Continue"
+                            val cancelTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)cancel\s*transaction"""))
+                            if (cancelTxt != null) {
+                                val cb = Rect(); cancelTxt.getBoundsInScreen(cb)
+                                // Gap + half-button approx 195 pixels on a 1080x2400 screen. We offset from Cancel center.
+                                dynamicTapY = cb.centerY().toFloat() - 195f
+                                cancelTxt.recycle()
+                            }
+                        }
+
+                        // 3. Fallback to window bottom offset
+                        if (dynamicTapY < 0) {
+                            val b = Rect()
+                            fallbackRoot.getBoundsInScreen(b)
+                            dynamicTapY = if (b.bottom > 0) b.bottom - 322f else 2078f
+                        }
+                        fallbackRoot.recycle()
+                    }
+
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
+                    tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
                     safeSleep(300)
                 }
             }
@@ -751,12 +771,32 @@ class JioPOSAccessibilityService : AccessibilityService() {
                 }
                 if (!tertTapped) {
                     val fallbackRoot = jiopOsRoot()
-                    val b = android.graphics.Rect()
-                    fallbackRoot?.getBoundsInScreen(b)
-                    fallbackRoot?.recycle()
-                    val tapY = if (b.bottom > 0) b.bottom - 322f else 2078f
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — dynamic coord tap at Y=$tapY")
-                    tapCoord(540f, tapY)
+                    var dynamicTapY = -1f
+                    if (fallbackRoot != null) {
+                        val continueTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)^\s*continue\s*$"""))
+                        if (continueTxt != null) {
+                            val cb = Rect(); continueTxt.getBoundsInScreen(cb)
+                            dynamicTapY = cb.centerY().toFloat()
+                            continueTxt.recycle()
+                        } else {
+                            val cancelTxt = findBottomTextNode(fallbackRoot, Regex("""(?i)cancel\s*transaction"""))
+                            if (cancelTxt != null) {
+                                val cb = Rect(); cancelTxt.getBoundsInScreen(cb)
+                                dynamicTapY = cb.centerY().toFloat() - 195f
+                                cancelTxt.recycle()
+                            }
+                        }
+
+                        if (dynamicTapY < 0) {
+                            val b = Rect()
+                            fallbackRoot.getBoundsInScreen(b)
+                            dynamicTapY = if (b.bottom > 0) b.bottom - 322f else 2078f
+                        }
+                        fallbackRoot.recycle()
+                    }
+
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — dynamic coord tap at Y=$dynamicTapY")
+                    tapCoord(540f, if (dynamicTapY > 0) dynamicTapY else 2078f)
                     safeSleep(300)
                 }
             }
@@ -784,6 +824,31 @@ class JioPOSAccessibilityService : AccessibilityService() {
             if (result != null) return result
         }
         return null
+    }
+
+    private fun findBottomTextNode(node: AccessibilityNodeInfo, regex: Regex): AccessibilityNodeInfo? {
+        var best: AccessibilityNodeInfo? = null
+        var bestBottom = -1
+        val b = Rect()
+        fun walk(n: AccessibilityNodeInfo) {
+            val text = n.text?.toString() ?: ""
+            val desc = n.contentDescription?.toString() ?: ""
+            if (regex.containsMatchIn(text) || regex.containsMatchIn(desc)) {
+                n.getBoundsInScreen(b)
+                if (b.height() > 0 && b.bottom > bestBottom) {
+                    best?.recycle()
+                    best = AccessibilityNodeInfo.obtain(n)
+                    bestBottom = b.bottom
+                }
+            }
+            for (i in 0 until n.childCount) {
+                val child = n.getChild(i) ?: continue
+                walk(child)
+                child.recycle()
+            }
+        }
+        walk(node)
+        return best
     }
 
     private fun findNearbyNodeMatchingRegex(
