@@ -486,8 +486,17 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     safeSleep(150)
                 }
                 if (!tertTapped) {
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — coord tap")
-                    tapCoord(540f, 2078f)
+                    val fallbackRoot = jiopOsRoot()
+                    val b = android.graphics.Rect()
+                    fallbackRoot?.getBoundsInScreen(b)
+                    fallbackRoot?.recycle()
+                    // Y=2078 was optimal on a 2400-height screen with gestures (nav bar off).
+                    // Distance from bottom is 2400 - 2078 = 322.
+                    // By recalculating from the active window bottom, this shifts up when nav bar is on,
+                    // avoiding the "Cancel Transaction" button below it.
+                    val tapY = if (b.bottom > 0) b.bottom - 322f else 2078f
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: fast-path tertiary text failed — dynamic coord tap at Y=$tapY")
+                    tapCoord(540f, tapY)
                     safeSleep(300)
                 }
             }
@@ -741,8 +750,13 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     safeSleep(150)
                 }
                 if (!tertTapped) {
-                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — coord tap")
-                    tapCoord(540f, 2078f)
+                    val fallbackRoot = jiopOsRoot()
+                    val b = android.graphics.Rect()
+                    fallbackRoot?.getBoundsInScreen(b)
+                    fallbackRoot?.recycle()
+                    val tapY = if (b.bottom > 0) b.bottom - 322f else 2078f
+                    Log.i(TAG, "TIMING selectPlan +${selMs()}ms: tertiary text failed — dynamic coord tap at Y=$tapY")
+                    tapCoord(540f, tapY)
                     safeSleep(300)
                 }
             }
