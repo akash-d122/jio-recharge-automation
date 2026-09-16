@@ -693,11 +693,13 @@ class JioPOSAccessibilityService : AccessibilityService() {
                     break
                 }
 
-                val selectedPlan = findRawTextNode(r, Regex("""(?i)selected\s+plan"""))
+                val selectedPlan = findRawTextNode(r, Regex("""(?i)selected\s+plan|offer\s+id|change\s+plan"""))
                 if (selectedPlan != null) {
                     selectedPlan.recycle()
                     if (navPass > 0 && navPass % 10 == 0) {
-                        try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 322f) } catch (e: Exception) { tapCoord(540f, 2078f) }
+                        // The 'Checkout' button on this screen is at the absolute bottom.
+                        // We use a 140px offset from the usable bottom window edge.
+                        try { tapCoord(540f, resources.displayMetrics.heightPixels.toFloat() - 140f) } catch (e: Exception) { tapCoord(540f, 2200f) }
                     }
                 }
                 r.recycle()
